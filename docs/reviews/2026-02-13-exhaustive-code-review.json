@@ -1,0 +1,333 @@
+{
+  "review": {
+    "id": "async-queue-exhaustive-review-2026-02-13",
+    "date": "2026-02-13",
+    "project": "jdobb-async-queue",
+    "scope": [
+      "src/",
+      "tests/",
+      "docs/architecture",
+      "docs/api"
+    ],
+    "checks": [
+      {
+        "command": "python -m pytest -q",
+        "result": "pass",
+        "details": "116 passed, 17 skipped"
+      },
+      {
+        "command": "python -m pytest --cov=src/jdobb_async_queue --cov-report=term-missing -q",
+        "result": "pass",
+        "details": "77% total coverage; Redis backend 0% in this run"
+      },
+      {
+        "command": "python -m ruff check .",
+        "result": "pass",
+        "details": "All checks passed"
+      },
+      {
+        "command": "python -m black --check .",
+        "result": "pass",
+        "details": "19 files unchanged"
+      }
+    ]
+  },
+  "summary": {
+    "high": 4,
+    "medium": 5,
+    "low": 1,
+    "total": 10
+  },
+  "findings": [
+    {
+      "id": "AQ-CR-001",
+      "title": "subscribe_with_timeout does not enforce timeout",
+      "severity": "high",
+      "type": "bug",
+      "confidence": "high",
+      "status": "open",
+      "references": [
+        {
+          "path": "src/jdobb_async_queue/broadcaster.py",
+          "line": 105
+        },
+        {
+          "path": "src/jdobb_async_queue/broadcaster.py",
+          "line": 127
+        }
+      ],
+      "description": "Method advertises timeout behavior but never applies timeout logic; it simply iterates backend updates.",
+      "impact": "Callers can block indefinitely despite supplying timeout.",
+      "evidence": [
+        {
+          "kind": "static",
+          "detail": "No asyncio.wait_for or equivalent is used in method body."
+        },
+        {
+          "kind": "runtime",
+          "detail": "subscribe_with_timeout(timeout=0.05) yielded after ~0.201s when update arrived late."
+        }
+      ],
+      "recommendation": "Enforce per-update timeout (e.g., wait_for around each next update) and add timeout tests."
+    },
+    {
+      "id": "AQ-CR-002",
+      "title": "Terminal job states can be overwritten",
+      "severity": "high",
+      "type": "bug",
+      "confidence": "high",
+      "status": "open",
+      "references": [
+        {
+          "path": "src/jdobb_async_queue/job_queue.py",
+          "line": 224
+        },
+        {
+          "path": "src/jdobb_async_queue/job_queue.py",
+          "line": 228
+        },
+        {
+          "path": "src/jdobb_async_queue/job_queue.py",
+          "line": 257
+        },
+        {
+          "path": "src/jdobb_async_queue/job_queue.py",
+          "line": 261
+        }
+      ],
+      "description": "complete() and fail() do not validate current state and can overwrite cancelled/completed/failed jobs.",
+      "impact": "Races can corrupt lifecycle outcomes and auditability.",
+      "evidence": [
+        {
+          "kind": "runtime",
+          "detail": "A cancelled job was later completed successfully in repro script."
+        }
+      ],
+      "recommendation": "Implement explicit state-transition guardrails and reject invalid transitions."
+    },
+    {
+      "id": "AQ-CR-003",
+      "title": "Redis claim logic does not apply global priority across job types",
+      "severity": "high",
+      "type": "bug",
+      "confidence": "high",
+      "status": "open",
+      "references": [
+        {
+          "path": "src/jdobb_async_queue/backends/redis.py",
+          "line": 136
+        },
+        {
+          "path": "src/jdobb_async_queue/backends/redis.py",
+          "line": 149
+        },
+        {
+          "path": "src/jdobb_async_queue/backends/redis.py",
+          "line": 151
+        }
+      ],
+      "description": "Claim loops per-type pending sets and picks first available set instead of comparing top candidates globally.",
+      "impact": "Lower-priority jobs can be processed before higher-priority jobs from different job types.",
+      "evidence": [
+        {
+          "kind": "static",
+          "detail": "No cross-set score comparison exists before selecting candidate."
+        }
+      ],
+      "recommendation": "Use a global pending index or compare all per-type head candidates and claim best score."
+    },
+    {
+      "id": "AQ-CR-004",
+      "title": "Redis pending sets can leak stale IDs when job keys expire",
+      "severity": "high",
+      "type": "bug",
+      "confidence": "high",
+      "status": "open",
+      "references": [
+        {
+          "path": "src/jdobb_async_queue/backends/redis.py",
+          "line": 69
+        },
+        {
+          "path": "src/jdobb_async_queue/backends/redis.py",
+          "line": 77
+        },
+        {
+          "path": "src/jdobb_async_queue/backends/redis.py",
+          "line": 165
+        }
+      ],
+      "description": "When TTL-expired job keys are missing during claim, code continues without zrem cleanup.",
+      "impact": "Pending sorted sets can grow with dead IDs, degrading claim performance over time.",
+      "evidence": [
+        {
+          "kind": "static",
+          "detail": "No zrem call in data-is-None branch."
+        }
+      ],
+      "recommendation": "Remove stale IDs on key miss and add periodic reconciliation."
+    },
+    {
+      "id": "AQ-CR-005",
+      "title": "Progress bounds are not enforced on updates",
+      "severity": "medium",
+      "type": "bug",
+      "confidence": "high",
+      "status": "open",
+      "references": [
+        {
+          "path": "src/jdobb_async_queue/schemas.py",
+          "line": 51
+        },
+        {
+          "path": "src/jdobb_async_queue/job_queue.py",
+          "line": 193
+        }
+      ],
+      "description": "Schema bounds exist for progress, but queue.update assigns arbitrary floats without validation.",
+      "impact": "Out-of-range progress values can be persisted and emitted.",
+      "evidence": [
+        {
+          "kind": "runtime",
+          "detail": "queue.update(progress=1.75) succeeded and persisted 1.75."
+        }
+      ],
+      "recommendation": "Validate bounds in update() or enable assignment validation on model updates."
+    },
+    {
+      "id": "AQ-CR-006",
+      "title": "Duplicate job_id handling differs by backend",
+      "severity": "medium",
+      "type": "bug",
+      "confidence": "high",
+      "status": "open",
+      "references": [
+        {
+          "path": "src/jdobb_async_queue/backends/memory.py",
+          "line": 26
+        },
+        {
+          "path": "src/jdobb_async_queue/backends/redis.py",
+          "line": 72
+        },
+        {
+          "path": "src/jdobb_async_queue/backends/sqlite.py",
+          "line": 165
+        }
+      ],
+      "description": "Memory/Redis overwrite duplicate IDs silently; SQLite raises IntegrityError.",
+      "impact": "Behavior changes by backend can cause silent overwrite or unexpected crashes.",
+      "evidence": [
+        {
+          "kind": "runtime",
+          "detail": "Duplicate ID overwrote in memory and raised IntegrityError in SQLite."
+        }
+      ],
+      "recommendation": "Define and enforce a consistent duplicate-ID policy across backends."
+    },
+    {
+      "id": "AQ-CR-007",
+      "title": "SQLite URL parser strips Unix absolute-path leading slash",
+      "severity": "medium",
+      "type": "bug",
+      "confidence": "high",
+      "status": "open",
+      "references": [
+        {
+          "path": "src/jdobb_async_queue/backends/sqlite.py",
+          "line": 54
+        },
+        {
+          "path": "src/jdobb_async_queue/backends/sqlite.py",
+          "line": 55
+        }
+      ],
+      "description": "Path normalization removes leading slash for all paths, including Unix absolute paths.",
+      "impact": "Database location can resolve incorrectly on Unix-like systems.",
+      "evidence": [
+        {
+          "kind": "static",
+          "detail": "path.startswith('/') branch unconditionally strips first slash."
+        }
+      ],
+      "recommendation": "Preserve Unix absolute paths and only normalize Windows-drive path forms."
+    },
+    {
+      "id": "AQ-CR-008",
+      "title": "SQLite claim does not verify update success before returning job",
+      "severity": "medium",
+      "type": "bug",
+      "confidence": "medium",
+      "status": "open",
+      "references": [
+        {
+          "path": "src/jdobb_async_queue/backends/sqlite.py",
+          "line": 279
+        },
+        {
+          "path": "src/jdobb_async_queue/backends/sqlite.py",
+          "line": 288
+        }
+      ],
+      "description": "Claim path returns selected job after conditional UPDATE but does not inspect affected row count.",
+      "impact": "Under contention across connections, stale claimant may return a job it did not claim.",
+      "evidence": [
+        {
+          "kind": "inference",
+          "detail": "Issue inferred from SELECT-then-UPDATE pattern without rowcount validation."
+        }
+      ],
+      "recommendation": "Check rowcount and retry when zero; consider stronger transaction strategy."
+    },
+    {
+      "id": "AQ-CR-009",
+      "title": "Redis production backend is not exercised in current test environment",
+      "severity": "medium",
+      "type": "test_gap",
+      "confidence": "high",
+      "status": "open",
+      "references": [
+        {
+          "path": "src/jdobb_async_queue/backends/redis.py",
+          "line": 1
+        }
+      ],
+      "description": "Coverage run showed Redis backend at 0% with Redis tests skipped.",
+      "impact": "Critical production-path regressions can ship without automated detection.",
+      "evidence": [
+        {
+          "kind": "runtime",
+          "detail": "Coverage report: redis.py 128 statements, 128 missed."
+        }
+      ],
+      "recommendation": "Run Redis-backed tests in CI with a Redis service and enforce coverage threshold."
+    },
+    {
+      "id": "AQ-CR-010",
+      "title": "No direct tests for subscribe_with_timeout",
+      "severity": "low",
+      "type": "test_gap",
+      "confidence": "high",
+      "status": "open",
+      "references": [
+        {
+          "path": "src/jdobb_async_queue/broadcaster.py",
+          "line": 105
+        },
+        {
+          "path": "tests/test_broadcaster.py",
+          "line": 1
+        }
+      ],
+      "description": "Timeout-specific behavior is not covered by tests.",
+      "impact": "Regression in timeout semantics can go unnoticed.",
+      "evidence": [
+        {
+          "kind": "runtime",
+          "detail": "Coverage report marks broadcaster timeout region as missing."
+        }
+      ],
+      "recommendation": "Add tests for timeout trigger and timeout reset semantics."
+    }
+  ]
+}
