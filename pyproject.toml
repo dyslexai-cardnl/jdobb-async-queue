@@ -1,0 +1,37 @@
+[project]
+name = "jdobb-async-queue"
+version = "0.1.0"
+description = "Async job queue with Redis/Memory/SQLite backends"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+dependencies = [
+    "pydantic>=2.0",
+    "structlog>=23.0",
+]
+
+[project.optional-dependencies]
+redis = ["redis>=5.0"]
+sqlite = ["aiosqlite>=0.19"]
+all = ["redis>=5.0", "aiosqlite>=0.19"]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "ruff>=0.1",
+    "black>=23.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jdobb_async_queue"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
