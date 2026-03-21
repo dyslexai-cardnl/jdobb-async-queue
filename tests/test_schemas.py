@@ -1,6 +1,8 @@
 """Tests for schema models."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 
 import pytest
 
