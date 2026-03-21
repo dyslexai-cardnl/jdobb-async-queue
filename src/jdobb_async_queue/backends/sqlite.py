@@ -3,7 +3,9 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from urllib.parse import urlparse
 
 from jdobb_async_queue.backends.base import QueueBackend
