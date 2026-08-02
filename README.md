@@ -2,6 +2,8 @@
 
 Async job queue library for Python with Redis, Memory, and SQLite backends.
 
+The same type-safe API runs on an in-memory backend in tests, SQLite for single-node, and Redis for distributed multi-worker setups, so call sites don't change as you scale. Used by [evilleAI](https://github.com/dyslexai-cardnl) for its agent command queue.
+
 ## Features
 
 - **Async-first** - All operations use `async/await`
